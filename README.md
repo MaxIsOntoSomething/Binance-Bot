@@ -77,7 +77,7 @@
 
 #### Running the Bot with Docker
 
-1. **Create a [.env](http://_vscodecontentref_/1) file with your API keys and other configuration**:
+1. **Create a `.env` file with your API keys and configuration**:
     ```env
     BINANCE_API_KEY=YOUR_BINANCE_API_KEY
     BINANCE_API_SECRET=YOUR_BINANCE_API_SECRET
@@ -85,6 +85,12 @@
     TESTNET_API_SECRET=YOUR_TESTNET_API_SECRET
     TELEGRAM_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
     TELEGRAM_CHAT_ID=YOUR_TELEGRAM_CHAT_ID
+    USE_TESTNET=yes
+    USE_TELEGRAM=no
+    DROP_THRESHOLDS=0.01,0.02,0.03
+    ORDER_TYPE=limit
+    USE_PERCENTAGE=no
+    TRADE_AMOUNT=100
     ```
 
 2. **Build the Docker image**:
@@ -96,6 +102,15 @@
     ```sh
     docker-compose up
     ```
+
+The environment variables control the bot's behavior:
+- `USE_TESTNET`: Set to 'yes' or 'no' to use testnet or live trading
+- `USE_TELEGRAM`: Set to 'yes' or 'no' to enable/disable Telegram notifications
+- `DROP_THRESHOLDS`: Comma-separated list of price drop thresholds (e.g., '0.01,0.02,0.03')
+- `ORDER_TYPE`: Set to 'limit' or 'market' for order type
+- `USE_PERCENTAGE`: Set to 'yes' or 'no' to use percentage-based trading
+- `TRADE_AMOUNT`: Amount to trade (percentage if USE_PERCENTAGE=yes, fixed amount if no)
+
 
 ### Example Screenshots
 
