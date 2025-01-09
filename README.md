@@ -30,7 +30,7 @@
     ```sh
     cp config/config_template.json config/config.json
     ```
-    Edit the file [config.json](http://_vscodecontentref_/2) and add your Binance and Telegram API keys:
+    Edit the file config.json and add your Binance and Telegram API keys:
     ```json
     {
          "BINANCE_API_KEY": "YOUR_BINANCE_API_KEY",
@@ -77,7 +77,7 @@
 
 #### Running the Bot with Docker
 
-1. **Create a [.env](http://_vscodecontentref_/3) file with your API keys and other configuration**:
+1. **Create a [.env](http://_vscodecontentref_/1) file with your API keys and other configuration**:
     ```env
     BINANCE_API_KEY=YOUR_BINANCE_API_KEY
     BINANCE_API_SECRET=YOUR_BINANCE_API_SECRET
@@ -116,6 +116,8 @@ This bot is available to everyone. Losses and usage are at your own risk.
 - Support for other exchanges
 - Backtesting capabilities
 - Local UI for management
+- Limit orders should cancel automatically when not executed within 8 hours
+- Bot should check for open limit positions at daily reset and still be able to make new orders on top of the open ones
 
 ### Contact
 

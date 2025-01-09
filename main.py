@@ -147,7 +147,7 @@ class BinanceBot:
             for asset, total in balance_report.items():
                 self.logger.info(f"{asset}: {total}")
 
-    def execute_trade(self, symbol, price):
+    def execute_trade(self, symbol, price, reason):
         try:
             # Fetch the current price right before placing the order
             ticker = self.client.get_symbol_ticker(symbol=symbol)
@@ -179,22 +179,17 @@ class BinanceBot:
                 )
                 print(f"Limit order set at price {current_price}")
                 self.logger.info(f"Limit order set at price {current_price}")
-                # Wait for the order to be filled
-                while True:
-                    order_status = self.client.get_order(symbol=symbol, orderId=order['orderId'])
-                    if order_status['status'] == 'FILLED':
-                        self.total_bought[symbol] += quantity
-                        self.total_spent[symbol] += quantity * current_price
-                        self.total_trades += 1  # Increment total trades
-                        self.logger.info(f"BUY ORDER for {symbol}: {order}")
-                        print(Fore.GREEN + f"BUY ORDER for {symbol}: {order}")
-                        print(Fore.YELLOW + f"Bought {quantity} {symbol.replace('USDT', '')}")
-                        if self.use_telegram:
-                            self.telegram_bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"BUY ORDER for {symbol}: {order}")
-                        self.print_balance_report()  # Print balance report after each buy
-                        self.last_order_time[symbol] = datetime.now(timezone.utc)  # Update last order time
-                        break
-                    time.sleep(1)  # Check order status every second
+                # Do not wait for the order to be filled, continue with other tasks
+                self.total_bought[symbol] += quantity
+                self.total_spent[symbol] += quantity * current_price
+                self.total_trades += 1  # Increment total trades
+                self.logger.info(f"BUY ORDER for {symbol}: {order}")
+                print(Fore.GREEN + f"BUY ORDER for {symbol}: {order}")
+                print(Fore.YELLOW + f"Bought {quantity} {symbol.replace('USDT', '')} because {reason}")
+                if self.use_telegram:
+                    self.telegram_bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"BUY ORDER for {symbol}: {order}")
+                self.print_balance_report()  # Print balance report after each buy
+                self.last_order_time[symbol] = datetime.now(timezone.utc)  # Update last order time
             elif self.order_type == "market":
                 order = self.client.create_order(
                     symbol=symbol,
@@ -208,7 +203,7 @@ class BinanceBot:
                 self.total_trades += 1  # Increment total trades
                 self.logger.info(f"BUY ORDER for {symbol}: {order}")
                 print(Fore.GREEN + f"BUY ORDER for {symbol}: {order}")
-                print(Fore.YELLOW + f"Bought {quantity} {symbol.replace('USDT', '')}")
+                print(Fore.YELLOW + f"Bought {quantity} {symbol.replace('USDT', '')} because {reason}")
                 if self.use_telegram:
                     self.telegram_bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"BUY ORDER for {symbol}: {order}")
                 self.print_balance_report()  # Print balance report after each buy
@@ -285,12 +280,13 @@ class BinanceBot:
                             daily_open_price = self.get_daily_open_price(symbol)
                             signals = self.strategy.generate_signals(historical_data['close'].astype(float).values, daily_open_price)
                             
-                            for threshold, price in signals:
+                            for threshold, price in sorted(signals):  # Ensure thresholds are checked in order
                                 if not self.orders_placed_today[symbol][threshold]:
-                                    print(f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
-                                    self.execute_trade(symbol, price)
+                                    reason = f"threshold {threshold * 100}% reached"
+                                    print(Fore.YELLOW + f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price} because {reason}")
+                                    self.execute_trade(symbol, price, reason)
                                     self.orders_placed_today[symbol][threshold] = True
-                                    self.logger.info(f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
+                                    self.logger.info(f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price} because {reason}")
                     self.max_trades_executed = all(all(placed for placed in self.orders_placed_today[symbol].values()) for symbol in TRADING_SYMBOLS)
                 else:
                     next_reset_time = next_daily_open_check - datetime.now(timezone.utc)
@@ -334,6 +330,10 @@ if __name__ == "__main__":
             trade_amount = float(input("Enter the percentage of USDT to use per trade (e.g., 10 for 10%): ").strip()) / 100
         else:
             trade_amount = float(input("Enter the amount of USDT to use per trade: ").strip())
+
+    print(Fore.CYAN + f"Number of thresholds: {len(drop_thresholds)}")
+    for i, threshold in enumerate(drop_thresholds):
+        print(Fore.CYAN + f"Threshold {i+1}: {threshold * 100}%")
 
     bot = BinanceBot(use_testnet, use_telegram, drop_thresholds, order_type, use_percentage, trade_amount)
     bot.test_connection()
