@@ -5,6 +5,7 @@
 - Python 3.7 or higher
 - A Binance account
 - A Telegram account for notifications (optional)
+- Docker (for running the bot in a container)
 
 ### Installation
 
@@ -29,7 +30,7 @@
     ```sh
     cp config/config_template.json config/config.json
     ```
-    Edit the file [config.json](http://_vscodecontentref_/3) and add your Binance and Telegram API keys:
+    Edit the file [config.json](http://_vscodecontentref_/2) and add your Binance and Telegram API keys:
     ```json
     {
          "BINANCE_API_KEY": "YOUR_BINANCE_API_KEY",
@@ -46,6 +47,8 @@
     ```
 
 ### Usage
+
+#### Running the Bot Normally
 
 1. **Start the bot**
     ```sh
@@ -71,6 +74,28 @@
     - `/balance`: Shows the current account balance.
     - `/trades`: Shows the total number of trades done.
     - `/profits`: Shows the current profits.
+
+#### Running the Bot with Docker
+
+1. **Create a [.env](http://_vscodecontentref_/3) file with your API keys and other configuration**:
+    ```env
+    BINANCE_API_KEY=YOUR_BINANCE_API_KEY
+    BINANCE_API_SECRET=YOUR_BINANCE_API_SECRET
+    TESTNET_API_KEY=YOUR_TESTNET_API_KEY
+    TESTNET_API_SECRET=YOUR_TESTNET_API_SECRET
+    TELEGRAM_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
+    TELEGRAM_CHAT_ID=YOUR_TELEGRAM_CHAT_ID
+    ```
+
+2. **Build the Docker image**:
+    ```sh
+    docker-compose build
+    ```
+
+3. **Run the Docker container**:
+    ```sh
+    docker-compose up
+    ```
 
 ### Example Screenshots
 

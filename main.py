@@ -1,3 +1,4 @@
+import os
 from binance.client import Client
 from binance.enums import *
 from datetime import datetime, timedelta, timezone
@@ -19,14 +20,14 @@ init(autoreset=True)
 with open('config/config.json') as config_file:
     config = json.load(config_file)
 
-BINANCE_API_KEY = config['BINANCE_API_KEY']
-BINANCE_API_SECRET = config['BINANCE_API_SECRET']
-TESTNET_API_KEY = config['TESTNET_API_KEY']
-TESTNET_API_SECRET = config['TESTNET_API_SECRET']
+BINANCE_API_KEY = os.getenv('BINANCE_API_KEY', config['BINANCE_API_KEY'])
+BINANCE_API_SECRET = os.getenv('BINANCE_API_SECRET', config['BINANCE_API_SECRET'])
+TESTNET_API_KEY = os.getenv('TESTNET_API_KEY', config['TESTNET_API_KEY'])
+TESTNET_API_SECRET = os.getenv('TESTNET_API_SECRET', config['TESTNET_API_SECRET'])
 TRADING_SYMBOLS = config['TRADING_SYMBOLS']
 TIME_INTERVAL = config['TIME_INTERVAL']
-TELEGRAM_TOKEN = config['TELEGRAM_TOKEN']
-TELEGRAM_CHAT_ID = config['TELEGRAM_CHAT_ID']
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', config['TELEGRAM_TOKEN'])
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', config['TELEGRAM_CHAT_ID'])
 
 class BinanceBot:
     def __init__(self, use_testnet, use_telegram, drop_thresholds, order_type, use_percentage, trade_amount):
