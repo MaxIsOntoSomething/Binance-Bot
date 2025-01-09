@@ -14,3 +14,5 @@ class PriceDropStrategy:
             if drop_percentage >= threshold:
                 signals.append((threshold, last_daily_close))
         return signals
+    
+    
