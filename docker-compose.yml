@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   binance-bot:
     build: .
@@ -11,5 +13,12 @@ services:
       - TESTNET_API_SECRET=${TESTNET_API_SECRET}
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - USE_TESTNET=${USE_TESTNET}
+      - USE_TELEGRAM=${USE_TELEGRAM}
+      - DROP_THRESHOLDS=${DROP_THRESHOLDS}
+      - ORDER_TYPE=${ORDER_TYPE}
+      - USE_PERCENTAGE=${USE_PERCENTAGE}
+      - TRADE_AMOUNT=${TRADE_AMOUNT}
+      - DOCKER_CONTAINER=true
     stdin_open: true
     tty: true

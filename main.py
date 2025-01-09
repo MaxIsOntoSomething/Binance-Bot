@@ -308,24 +308,33 @@ class BinanceBot:
                 time.sleep(60)
 
 if __name__ == "__main__":
-    use_testnet = input("Do you want to use the testnet? (yes/no): ").strip().lower() == 'yes'
-    use_telegram = input("Do you want to use Telegram notifications? (yes/no): ").strip().lower() == 'yes'
-    num_thresholds = int(input("Enter the number of drop thresholds: ").strip())
-    drop_thresholds = []
-    for i in range(num_thresholds):
-        while True:
-            threshold = float(input(f"Enter drop threshold {i+1} percentage (e.g., 1 for 1%): ").strip()) / 100
-            if i == 0 or threshold > drop_thresholds[-1]:
-                drop_thresholds.append(threshold)
-                break
-            else:
-                print(f"Threshold {i+1} must be higher than threshold {i}. Please enter a valid value.")
-    order_type = input("Do you want to use limit orders or market orders? (limit/market): ").strip().lower()
-    use_percentage = input("Do you want to use a percentage of USDT per trade? (yes/no): ").strip().lower() == 'yes'
-    if use_percentage:
-        trade_amount = float(input("Enter the percentage of USDT to use per trade (e.g., 10 for 10%): ").strip()) / 100
+    if os.getenv('DOCKER_CONTAINER', 'false').strip().lower() == 'true':
+        use_testnet = os.getenv('USE_TESTNET', 'yes').strip().lower() == 'yes'
+        use_telegram = os.getenv('USE_TELEGRAM', 'no').strip().lower() == 'yes'
+        drop_thresholds = list(map(float, os.getenv('DROP_THRESHOLDS', '0.01,0.02,0.03').split(',')))
+        order_type = os.getenv('ORDER_TYPE', 'limit').strip().lower()
+        use_percentage = os.getenv('USE_PERCENTAGE', 'no').strip().lower() == 'yes'
+        trade_amount = float(os.getenv('TRADE_AMOUNT', '100'))
     else:
-        trade_amount = float(input("Enter the amount of USDT to use per trade: ").strip())
+        use_testnet = input("Do you want to use the testnet? (yes/no): ").strip().lower() == 'yes'
+        use_telegram = input("Do you want to use Telegram notifications? (yes/no): ").strip().lower() == 'yes'
+        num_thresholds = int(input("Enter the number of drop thresholds: ").strip())
+        drop_thresholds = []
+        for i in range(num_thresholds):
+            while True:
+                threshold = float(input(f"Enter drop threshold {i+1} percentage (e.g., 1 for 1%): ").strip()) / 100
+                if i == 0 or threshold > drop_thresholds[-1]:
+                    drop_thresholds.append(threshold)
+                    break
+                else:
+                    print(f"Threshold {i+1} must be higher than threshold {i}. Please enter a valid value.")
+        order_type = input("Do you want to use limit orders or market orders? (limit/market): ").strip().lower()
+        use_percentage = input("Do you want to use a percentage of USDT per trade? (yes/no): ").strip().lower() == 'yes'
+        if use_percentage:
+            trade_amount = float(input("Enter the percentage of USDT to use per trade (e.g., 10 for 10%): ").strip()) / 100
+        else:
+            trade_amount = float(input("Enter the amount of USDT to use per trade: ").strip())
+
     bot = BinanceBot(use_testnet, use_telegram, drop_thresholds, order_type, use_percentage, trade_amount)
     bot.test_connection()
     bot.run()
