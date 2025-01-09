@@ -133,6 +133,7 @@ This bot is available to everyone. Losses and usage are at your own risk.
 - Local UI for management
 - Limit orders should cancel automatically when not executed within 8 hours
 - Bot should check for open limit positions at daily reset and still be able to make new orders on top of the open ones
+- Ensure there is always 200 USDT in the account which should not be used. This reset asset should be settable in the `.env` file or `config`.
 
 ### Contact
 
