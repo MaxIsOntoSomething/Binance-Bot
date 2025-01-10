@@ -69,9 +69,9 @@ class TradingBot:
             for symbol in self.config.trading_symbols:
                 ticker = self.client.client.get_symbol_ticker(symbol=symbol)
                 price = ticker['price']
-                print(f"Connection successful. Current price of {symbol}: {price}")
+                print(Fore.GREEN + f"Connection successful. Current price of {symbol}: {price}")
         except Exception as e:
-            print(f"Error testing connection: {str(e)}")
+            print(Fore.RED + f"Error testing connection: {str(e)}")
             self.logger.error(f"Error testing connection: {str(e)}")
             raise
 
@@ -103,7 +103,7 @@ class TradingBot:
                 
             except Exception as e:
                 self.logger.error(f"Error in main loop: {str(e)}")
-                print(f"Error in main loop: {str(e)}")
+                print(Fore.RED + f"Error in main loop: {str(e)}")
                 time.sleep(60)
 
     def process_trading_loop(self, fetch_price_interval, last_price_fetch_time, next_daily_open_check):
@@ -151,7 +151,7 @@ class TradingBot:
         for symbol in self.config.trading_symbols:
             if any(not placed for placed in self.orders_placed_today[symbol].values()):
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                print(f"[{timestamp}] Fetching historical data for {symbol}...")
+                print(Fore.CYAN + f"[{timestamp}] Fetching historical data for {symbol}...")
                 historical_data = self.market_data.get_historical_data(
                     symbol, 
                     self.config.time_interval, 
@@ -165,7 +165,7 @@ class TradingBot:
                 
                 for threshold, price in signals:
                     if not self.orders_placed_today[symbol][threshold]:
-                        print(f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
+                        print(Fore.MAGENTA + f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
                         self.execute_trade(symbol, price)  # Use the new execute_trade method
                         self.orders_placed_today[symbol][threshold] = True
                         self.logger.info(f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     )
     
     # Start bot
-    print("\nInitializing bot...")
+    print(Fore.CYAN + "\nInitializing bot...")
     bot.test_connection()
-    print("\nStarting trading bot...")
+    print(Fore.CYAN + "\nStarting trading bot...")
     bot.run()
