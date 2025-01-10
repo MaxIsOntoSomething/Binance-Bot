@@ -2,10 +2,11 @@ import telegram
 from telegram.ext import Updater, CommandHandler
 
 class TelegramHandler:
-    def __init__(self, token, chat_id, balance_manager):
+    def __init__(self, token, chat_id, balance_manager, market_data):
         self.bot = telegram.Bot(token=token)
         self.chat_id = chat_id
         self.balance_manager = balance_manager
+        self.market_data = market_data  # Store market_data instance
         self.updater = Updater(token)
         self.setup_handlers()
 

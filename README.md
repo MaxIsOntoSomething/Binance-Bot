@@ -1,11 +1,24 @@
-## Installation and Usage of the Binance Bot
+## Binance Trading Bot
+
+A Python-based trading bot for Binance that implements a price drop strategy with multiple buy thresholds.
+
+### Features
+
+- Multiple price drop thresholds for buying
+- Support for both limit and market orders
+- Automatic order monitoring and balance tracking
+- Real-time balance reports with trade summaries
+- Trading fee calculations and tracking
+- Configurable USDT reserve amount
+- Support for both live and testnet trading
+- Optional Telegram notifications
+- Automatic cancellation of unfilled orders after 8 hours
 
 ### Prerequisites
 
 - Python 3.7 or higher
-- A Binance account
-- A Telegram account for notifications (optional)
-- Docker (for running the bot in a container)
+- A Binance account (regular or testnet)
+- Telegram bot (optional)
 
 ### Installation
 
@@ -26,117 +39,110 @@
     pip install -r requirements.txt
     ```
 
-4. **Copy the configuration template and edit the configuration file**
-    ```sh
-    cp config/config_template.json config/config.json
-    ```
-    Edit the file config.json and add your Binance and Telegram API keys:
+4. **Configure the bot**
+    Copy `config/config_template.json` to `config/config.json` and edit with your details:
     ```json
     {
-         "BINANCE_API_KEY": "YOUR_BINANCE_API_KEY",
-         "BINANCE_API_SECRET": "YOUR_BINANCE_API_SECRET",
-         "TESTNET_API_KEY": "YOUR_TESTNET_API_KEY",
-         "TESTNET_API_SECRET": "YOUR_TESTNET_API_SECRET",
-         "TRADING_SYMBOLS": ["BTCUSDT", "ETHUSDT", "SOLUSDT"], 
-         "QUANTITY_PERCENTAGE": 0.1, 
-         "TIME_INTERVAL": "1d",
-         "TELEGRAM_TOKEN": "YOUR_TELEGRAM_BOT_TOKEN",
-         "TELEGRAM_CHAT_ID": "YOUR_TELEGRAM_CHAT_ID",
-         "DROP_THRESHOLDS": [0.01, 0.02, 0.03]  
+        "BINANCE_API_KEY": "your_api_key",
+        "BINANCE_API_SECRET": "your_api_secret",
+        "TESTNET_API_KEY": "your_testnet_key",
+        "TESTNET_API_SECRET": "your_testnet_secret",
+        "TRADING_SYMBOLS": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+        "TIME_INTERVAL": "1d",
+        "TELEGRAM_TOKEN": "your_telegram_bot_token",
+        "TELEGRAM_CHAT_ID": "your_telegram_chat_id",
+        "DROP_THRESHOLDS": [0.01, 0.02, 0.03],
+        "USDT_RESERVE": 200
     }
     ```
 
 ### Usage
-
-#### Running the Bot Normally
 
 1. **Start the bot**
     ```sh
     python main.py
     ```
 
-2. **Select Testnet or Live Network**
-    When starting, you will be asked if you want to use the Testnet. Answer with `yes` or `no`.
+2. **Configuration prompts**
+    - Choose testnet or live trading
+    - Enable/disable Telegram notifications
+    - Set number of price drop thresholds
+    - Configure threshold percentages (in ascending order)
+    - Choose limit or market orders
+    - Set fixed USDT amount or percentage per trade
+    - Set USDT reserve amount (minimum 200)
 
-3. **Select Telegram notifications**
-    When starting, you will be asked if you want to use Telegram notifications. Answer with `yes` or `no`.
+3. **Trading Process**
+    - Bot monitors price drops from daily open
+    - Places orders when price drops hit thresholds
+    - Automatically cancels unfilled limit orders after 8 hours
+    - Maintains minimum USDT reserve
+    - Shows detailed balance reports after trades
 
-4. **Set the drop thresholds**
-    When starting, you will be asked to enter the number of drop thresholds and their percentages in ascending order (e.g., 1 for 1%, 2 for 2%, etc.).
+4. **Balance Reports**
+    After each trade, you'll see:
+    - Current balances with changes
+    - Trade summary with quantities and prices
+    - Trading fees (0.1% per trade)
+    - Total amount spent including fees
 
-5. **Select order type**
-    When starting, you will be asked if you want to use limit orders or market orders. Answer with `limit` or `market`.
+5. **Telegram Commands** (if enabled)
+    - `/balance`: Current account balance
+    - `/trades`: Total number of trades executed
+    - `/profits`: Current profit/loss calculation
 
-6. **Set trade amount**
-    When starting, you will be asked if you want to use a percentage of USDT per trade or a fixed amount. Enter the percentage or the fixed amount accordingly.
+### Docker Support
 
-7. **Telegram commands** (if Telegram is enabled)
-    - `/balance`: Shows the current account balance.
-    - `/trades`: Shows the total number of trades done.
-    - `/profits`: Shows the current profits.
-
-#### Running the Bot with Docker
-
-1. **Create a `.env` file with your API keys and configuration**:
+1. **Create .env file**
     ```env
-    BINANCE_API_KEY=YOUR_BINANCE_API_KEY
-    BINANCE_API_SECRET=YOUR_BINANCE_API_SECRET
-    TESTNET_API_KEY=YOUR_TESTNET_API_KEY
-    TESTNET_API_SECRET=YOUR_TESTNET_API_SECRET
-    TELEGRAM_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
-    TELEGRAM_CHAT_ID=YOUR_TELEGRAM_CHAT_ID
+    BINANCE_API_KEY=your_api_key
+    BINANCE_API_SECRET=your_api_secret
+    TESTNET_API_KEY=your_testnet_key
+    TESTNET_API_SECRET=your_testnet_secret
+    TELEGRAM_TOKEN=your_telegram_token
+    TELEGRAM_CHAT_ID=your_chat_id
     USE_TESTNET=yes
     USE_TELEGRAM=no
     DROP_THRESHOLDS=0.01,0.02,0.03
     ORDER_TYPE=limit
     USE_PERCENTAGE=no
     TRADE_AMOUNT=100
+    USDT_RESERVE=200
     ```
 
-2. **Build the Docker image**:
+2. **Build and run**
     ```sh
     docker-compose build
-    ```
-
-3. **Run the Docker container**:
-    ```sh
     docker-compose up
     ```
 
-The environment variables control the bot's behavior:
-- `USE_TESTNET`: Set to 'yes' or 'no' to use testnet or live trading
-- `USE_TELEGRAM`: Set to 'yes' or 'no' to enable/disable Telegram notifications
-- `DROP_THRESHOLDS`: Comma-separated list of price drop thresholds (e.g., '0.01,0.02,0.03')
-- `ORDER_TYPE`: Set to 'limit' or 'market' for order type
-- `USE_PERCENTAGE`: Set to 'yes' or 'no' to use percentage-based trading
-- `TRADE_AMOUNT`: Amount to trade (percentage if USE_PERCENTAGE=yes, fixed amount if no)
+### Security
 
-
-### Example Screenshots
-
-#### Bot Starting
-![Bot Starting](img/bot_starting.png)
-
-#### Bot Buying
-![Bot Buying](img/bot_buying.png)
-
-### Disclaimer
-
-This bot is available to everyone. Losses and usage are at your own risk.
+- Never share your API keys
+- Use API keys with trade-only permissions
+- Maintain the USDT reserve for account safety
+- Test with testnet before live trading
 
 ### TODO
 
 - Fully manageable via Telegram
-- Implement multiple strategies
+- Implement multiple strategies:
+  - RSI-based strategy
+  - Moving average crossovers
+  - Volume-based triggers
 - Support for other exchanges
 - Backtesting capabilities
 - Local UI for management
 - Limit orders should cancel automatically when not executed within 8 hours
 - Bot should check for open limit positions at daily reset and still be able to make new orders on top of the open ones
-- Ensure there is always 200 USDT in the account which should not be used. This reset asset should be settable in the `.env` file or `config`.
+- Add email notifications option monthly
 
-### Contact
+### Disclaimer
 
-![Discord](https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white)
+This bot is for educational purposes. Trading cryptocurrencies carries risk. Use at your own discretion.
 
-You can reach me on Discord: **maskiplays**
+### Support
+
+For questions or issues:
+- Create a GitHub issue
+- Contact via Discord: **maskiplays**

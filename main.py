@@ -10,7 +10,7 @@ from src.bot.market_data import MarketData
 from src.bot.balance_manager import BalanceManager
 from src.bot.telegram_handler import TelegramHandler
 from strategies.price_drop import PriceDropStrategy
-from utils.logger import setup_logger
+from src.utils.logger import setup_logger
 
 # Initialize colorama
 init(autoreset=True)
@@ -45,15 +45,17 @@ class TradingBot:
             self.telegram = TelegramHandler(
                 self.config.telegram_token,
                 self.config.telegram_chat_id,
-                self.balance_manager
+                self.balance_manager,
+                self.market_data  # Add market_data instance
             )
         else:
             self.telegram = None
             
         self.trade_executor = TradeExecutor(
-            self.client.client, 
+            self.client,  # Pass the wrapper instead of self.client.client
             self.logger, 
-            self.telegram
+            self.telegram,
+            self.balance_manager  # Add balance_manager to TradeExecutor
         )
         self.strategy = PriceDropStrategy(drop_thresholds=drop_thresholds or self.config.drop_thresholds)
         
@@ -64,16 +66,48 @@ class TradingBot:
         self.use_percentage = None
 
     def test_connection(self):
-        """Test connection to Binance API"""
-        try:
-            for symbol in self.config.trading_symbols:
+        """Test connection to Binance API and validate symbols"""
+        valid_symbols = []
+        invalid_symbols = []
+        
+        for symbol in self.config.trading_symbols:
+            try:
                 ticker = self.client.client.get_symbol_ticker(symbol=symbol)
                 price = ticker['price']
                 print(Fore.GREEN + f"Connection successful. Current price of {symbol}: {price}")
+                valid_symbols.append(symbol)
+            except Exception as e:
+                print(Fore.RED + f"Invalid symbol: {symbol}")
+                self.logger.error(f"Invalid symbol: {symbol}")
+                invalid_symbols.append(symbol)
+                
+        if invalid_symbols:
+            self._write_invalid_symbols(invalid_symbols)
+            print(Fore.YELLOW + f"\nRemoved {len(invalid_symbols)} invalid symbols. Trading will continue with {len(valid_symbols)} valid symbols.")
+            self.logger.warning(f"Removed invalid symbols: {', '.join(invalid_symbols)}")
+            
+        # Update trading symbols to only include valid ones
+        self.config.trading_symbols = valid_symbols
+        return len(valid_symbols) > 0
+
+    def _write_invalid_symbols(self, invalid_symbols):
+        """Write invalid symbols to a file in config folder"""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filepath = os.path.join('config', 'invalid_symbols.txt')
+            
+            # Create config directory if it doesn't exist
+            os.makedirs('config', exist_ok=True)
+            
+            with open(filepath, 'a') as f:
+                f.write(f"\n=== Invalid Symbols Found at {timestamp} ===\n")
+                for symbol in invalid_symbols:
+                    f.write(f"{symbol}\n")
+                    
+            print(Fore.YELLOW + f"\nInvalid symbols have been logged to {filepath}")
         except Exception as e:
-            print(Fore.RED + f"Error testing connection: {str(e)}")
-            self.logger.error(f"Error testing connection: {str(e)}")
-            raise
+            print(Fore.RED + f"Error writing invalid symbols to file: {str(e)}")
+            self.logger.error(f"Error writing invalid symbols: {str(e)}")
 
     def initialize_trading_state(self):
         self.last_order_time = {symbol: None for symbol in self.config.trading_symbols}
@@ -128,13 +162,30 @@ class TradingBot:
             self.process_trades()
 
     def handle_daily_reset(self, next_daily_open_check):
+        """Handle daily reset while preserving open orders"""
         self.market_data.print_daily_open_prices()
-        self.last_order_time = {symbol: None for symbol in self.config.trading_symbols}
+        
+        # Reset trade executor's daily order count while preserving open orders
+        self.trade_executor.reset_daily_order_count()
+        
+        # Reset order tracking but exclude open orders
+        open_orders = {symbol: False for symbol in self.config.trading_symbols}
+        for symbol in self.config.trading_symbols:
+            if self.trade_executor.check_open_orders(symbol) > 0:
+                open_orders[symbol] = True
+                print(Fore.YELLOW + f"Found open orders for {symbol} during reset")
+        
+        # Initialize new day's order tracking
         self.orders_placed_today = {
-            symbol: {threshold: False for threshold in self.strategy.drop_thresholds}
+            symbol: {
+                threshold: open_orders[symbol] 
+                for threshold in self.strategy.drop_thresholds
+            }
             for symbol in self.config.trading_symbols
         }
+        
         self.max_trades_executed = False
+        self.logger.info("Daily reset completed while preserving open orders")
 
     def check_usdt_balance(self):
         """Check USDT balance every 10 minutes"""
@@ -149,7 +200,8 @@ class TradingBot:
         # Check USDT balance before processing trades
         self.check_usdt_balance()
         for symbol in self.config.trading_symbols:
-            if any(not placed for placed in self.orders_placed_today[symbol].values()):
+            # Only process if we can place more orders
+            if self.trade_executor.can_place_order(symbol):
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 print(Fore.CYAN + f"[{timestamp}] Fetching historical data for {symbol}...")
                 historical_data = self.market_data.get_historical_data(
@@ -165,11 +217,15 @@ class TradingBot:
                 
                 for threshold, price in signals:
                     if not self.orders_placed_today[symbol][threshold]:
-                        print(Fore.MAGENTA + f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
-                        self.execute_trade(symbol, price)  # Use the new execute_trade method
-                        self.orders_placed_today[symbol][threshold] = True
-                        self.logger.info(f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
+                        if self.trade_executor.can_place_order(symbol):
+                            print(Fore.MAGENTA + f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
+                            self.execute_trade(symbol, price)
+                            self.orders_placed_today[symbol][threshold] = True
+                            self.logger.info(f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
+                        else:
+                            print(Fore.YELLOW + f"Maximum orders reached for {symbol}, skipping signal")
 
+        # Update max_trades_executed status
         self.max_trades_executed = all(
             all(placed for placed in self.orders_placed_today[symbol].values()) 
             for symbol in self.config.trading_symbols
@@ -188,18 +244,25 @@ class TradingBot:
 
     def execute_trade(self, symbol, price):
         """Execute trade with configured parameters"""
-        if self.use_percentage:
-            balance = self.balance_manager.get_balance().get('USDT', 0)
-            amount = balance * self.trade_amount
-        else:
-            amount = self.trade_amount
+        try:
+            if self.use_percentage:
+                balance = self.balance_manager.get_balance().get('USDT', 0)
+                amount = balance * self.trade_amount
+            else:
+                amount = self.trade_amount
             
-        self.trade_executor.execute_trade(
-            symbol=symbol,
-            quantity=amount / float(price),  # Convert USDT amount to asset quantity
-            price=price,
-            order_type=self.order_type
-        )
+            # Calculate quantity with more precision
+            quantity = "{:.8f}".format(amount / float(price))
+            
+            self.trade_executor.execute_trade(
+                symbol=symbol,
+                quantity=quantity,  # Pass the formatted string quantity
+                price=price,
+                order_type=self.order_type
+            )
+        except Exception as e:
+            self.logger.error(f"Error calculating trade quantity for {symbol}: {str(e)}")
+            print(Fore.RED + f"Error calculating trade quantity for {symbol}: {str(e)}")
 
 if __name__ == "__main__":
     if os.getenv('DOCKER_CONTAINER'):
@@ -252,6 +315,8 @@ if __name__ == "__main__":
     
     # Start bot
     print(Fore.CYAN + "\nInitializing bot...")
-    bot.test_connection()
-    print(Fore.CYAN + "\nStarting trading bot...")
-    bot.run()
+    if bot.test_connection():
+        print(Fore.CYAN + "\nStarting trading bot...")
+        bot.run()
+    else:
+        print(Fore.RED + "\nNo valid trading symbols found. Please check your configuration.")

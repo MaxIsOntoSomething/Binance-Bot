@@ -3,3 +3,4 @@ config/config.json
 logs/
 __pycache__/
 .env
+config/invalid_symbols.txt
