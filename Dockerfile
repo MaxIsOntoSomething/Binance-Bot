@@ -4,11 +4,12 @@ FROM python:3.9-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
-
-# Install any needed packages specified in requirements.txt
+# Install dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY . .
 
 # Make port 80 available to the world outside this container
 EXPOSE 80
@@ -16,5 +17,8 @@ EXPOSE 80
 # Define environment variable
 ENV NAME BinanceBot
 
-# Run main.py when the container launches
+# Set environment variable to indicate Docker environment
+ENV DOCKER_CONTAINER=yes
+
+# Run the bot
 CMD ["python", "main.py"]
