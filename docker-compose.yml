@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   binance-bot:
     build: .
@@ -19,6 +17,7 @@ services:
       - ORDER_TYPE=${ORDER_TYPE}
       - USE_PERCENTAGE=${USE_PERCENTAGE}
       - TRADE_AMOUNT=${TRADE_AMOUNT}
+      - TRADING_SYMBOLS=${TRADING_SYMBOLS}
       - DOCKER_CONTAINER=true
     stdin_open: true
     tty: true

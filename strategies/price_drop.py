@@ -1,18 +1,19 @@
 import pandas as pd
+from strategies.base_strategy import BaseStrategy
 
-class PriceDropStrategy:
-    def __init__(self, drop_thresholds=[0.01, 0.02, 0.03]):  # Default drop thresholds
-        self.drop_thresholds = sorted(drop_thresholds, reverse=True)  # Sort thresholds in descending order
+class PriceDropStrategy(BaseStrategy):
+    def __init__(self, drop_thresholds):
+        self.drop_thresholds = sorted(drop_thresholds)  # Sort thresholds in ascending order
 
-    def generate_signals(self, data, daily_open_price):
-        prices = pd.Series(data)
-        last_daily_close = prices.iloc[-1]  # Closing price of the last daily candle
-        drop_percentage = (daily_open_price - last_daily_close) / daily_open_price
-
+    def generate_signals(self, prices, daily_open_price):
         signals = []
+        current_price = prices[-1]
+        
+        drop_percentage = (daily_open_price - current_price) / daily_open_price
+        
         for threshold in self.drop_thresholds:
             if drop_percentage >= threshold:
-                signals.append((threshold, last_daily_close))
+                signals.append((threshold, current_price))
+        
         return signals
-    
-    
+
