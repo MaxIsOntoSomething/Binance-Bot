@@ -1,3 +1,4 @@
+import requests  # Add this at the top with other imports
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, ContextTypes
 import asyncio
@@ -5,11 +6,20 @@ from queue import Queue
 from threading import Thread, Event
 
 class TelegramHandler:
-    def __init__(self, token, chat_id, balance_manager, market_data):
+    def __init__(self, token, chat_id, balance_manager=None, market_data=None):
+        if not token or not chat_id:
+            raise ValueError("Telegram token and chat_id must be provided")
+            
         self.token = token
         self.chat_id = chat_id
+        self.logger = None
         self.balance_manager = balance_manager
         self.market_data = market_data
+        self.base_url = f"https://api.telegram.org/bot{token}"
+        
+        # Verify connection on init
+        self._verify_connection()
+
         self.ready = Event()
         self.running = True
         
@@ -23,7 +33,6 @@ class TelegramHandler:
             'sp500': 'Show S&P 500 price'
         }
 
-        self.logger = None  # Initialize logger attribute
         self.loop = None
         self.application = None  # Initialize application attribute
 
@@ -31,6 +40,20 @@ class TelegramHandler:
         self.bot_thread = Thread(target=self.run_bot, daemon=True)
         self.bot_thread.start()
         self.ready.wait()  # Wait for bot to initialize
+
+    def _verify_connection(self):
+        """Verify Telegram bot connection"""
+        try:
+            url = f"{self.base_url}/getMe"
+            response = requests.get(url, timeout=10)
+            if not response.ok:
+                raise ConnectionError(f"Telegram API error: {response.text}")
+            if self.logger:
+                self.logger.info("Telegram connection verified successfully")
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Failed to verify Telegram connection: {str(e)}")
+            raise
 
     def run_bot(self):
         """Run the bot with proper event loop handling"""
@@ -94,29 +117,32 @@ class TelegramHandler:
         except Exception as e:
             print(f"Error sending telegram message: {str(e)}")
 
-    def send_message_sync(self, text):
-        """Thread-safe message sending"""
-        if hasattr(self, 'loop') and self.loop and self.loop.is_running():
-            try:
-                # Create a new coroutine for sending the message
-                async def send_msg():
-                    try:
-                        await self.app.bot.send_message(
-                            chat_id=self.chat_id,
-                            text=text,
-                            parse_mode='HTML'
-                        )
-                    except Exception as e:
-                        print(f"Error in async send: {e}")
-
-                # Run the coroutine in the event loop
-                future = asyncio.run_coroutine_threadsafe(
-                    send_msg(),
-                    self.loop
-                )
-                future.result(timeout=10)
-            except Exception as e:
-                print(f"Error sending message: {e}")
+    def send_message_sync(self, message):
+        """Send message synchronously with better error handling"""
+        if not message:
+            return
+            
+        try:
+            url = f"{self.base_url}/sendMessage"
+            data = {
+                "chat_id": self.chat_id,
+                "text": message,
+                "parse_mode": "HTML"
+            }
+            
+            response = requests.post(url, json=data, timeout=10)
+            if not response.ok:
+                if self.logger:
+                    self.logger.error(f"Telegram API error: {response.text}")
+                raise ConnectionError(f"Failed to send message: {response.text}")
+                
+            if self.logger:
+                self.logger.debug(f"Message sent successfully: {message[:50]}...")
+                
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error sending Telegram message: {str(e)}")
+            raise
 
     async def handle_balance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         balance_report = self.balance_manager.get_balance()
@@ -234,14 +260,6 @@ class TelegramHandler:
             )
         except Exception as e:
             print(f"Error sending market report: {str(e)}")
-
-    def send_message(self, message):
-        """Send a message to Telegram channel"""
-        if not hasattr(self, 'app') or not self.app:
-            print("Telegram bot not yet initialized")
-            return
-
-        self.send_message_sync(message)  # Fixed: Changed 'text' to 'message'
 
     async def _async_send_message(self, text):
         """Internal async method for sending messages"""

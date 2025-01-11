@@ -45,20 +45,30 @@ class TradingBot:
         
         if use_telegram:
             try:
+                # Add debug logging
+                self.logger.info(f"Initializing Telegram with token: {self.config.telegram_token[:10]}...")
+                self.logger.info(f"Chat ID: {self.config.telegram_chat_id}")
+                
                 self.telegram = TelegramHandler(
                     self.config.telegram_token,
                     self.config.telegram_chat_id,
                     self.balance_manager,
-                    self.market_data  # Add market_data instance
+                    self.market_data
                 )
-                self.telegram.set_logger(self.logger)  # Set logger after initialization
-                self.logger.info("Telegram handler initialized")
+                self.telegram.set_logger(self.logger)
+                
+                # Test Telegram connection
+                test_msg = "🤖 Bot starting up... Testing Telegram connection."
+                self.telegram.send_message_sync(test_msg)
+                self.logger.info("Telegram test message sent successfully")
+                
             except Exception as e:
-                self.logger.error(f"Failed to initialize Telegram handler: {e}")
+                self.logger.error(f"Failed to initialize Telegram handler: {str(e)}")
                 self.telegram = None
-                print(Fore.YELLOW + "Warning: Telegram notifications disabled due to initialization error")
+                print(Fore.RED + f"Error initializing Telegram: {str(e)}")
         else:
             self.telegram = None
+            self.logger.info("Telegram notifications disabled")
             
         self.trade_executor = TradeExecutor(
             self.client,  # Pass the wrapper instead of self.client.client
@@ -349,6 +359,12 @@ class TradingBot:
 
 if __name__ == "__main__":
     if os.getenv('DOCKER_CONTAINER'):
+        # Add debug logging for Docker environment
+        print("Running in Docker container")
+        print(f"USE_TELEGRAM env: {os.getenv('USE_TELEGRAM')}")
+        print(f"TELEGRAM_TOKEN env: {os.getenv('TELEGRAM_TOKEN')[:10]}...")
+        print(f"TELEGRAM_CHAT_ID env: {os.getenv('TELEGRAM_CHAT_ID')}")
+        
         # Running inside Docker, use environment variables
         use_testnet = os.getenv('USE_TESTNET').strip().lower() == 'yes'
         use_telegram = os.getenv('USE_TELEGRAM').strip().lower() == 'yes'
