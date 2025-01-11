@@ -3,13 +3,46 @@
     "BINANCE_API_SECRET": "YOUR_BINANCE_API_SECRET",
     "TESTNET_API_KEY": "YOUR_TESTNET_API_KEY",
     "TESTNET_API_SECRET": "YOUR_TESTNET_API_SECRET",
-    "TRADING_SYMBOLS": ["BTCUSDT", "ETHUSDT"], 
-    "QUANTITY_PERCENTAGE": 0.1, 
+    "TRADING_SYMBOLS": [
+        "XRPUSDT",
+        "BNBUSDT",
+        "LTCUSDT",
+        "DOTUSDT",
+        "AVAXUSDT",
+        "SHIBUSDT",
+        "DOGEUSDT",
+        "UNIUSDT",
+        "LINKUSDT",
+        "ATOMUSDT",
+        "FTMUSDT",
+        "NEARUSDT",
+        "XLMUSDT",
+        "VETUSDT",
+        "TRXUSDT",
+        "FILUSDT",
+        "SANDUSDT",
+        "AXSUSDT",
+        "EGLDUSDT"
+    ],
+    "QUANTITY_PERCENTAGE": 0.1,
     "TIME_INTERVAL": "1d",
     "TELEGRAM_TOKEN": "YOUR_TELEGRAM_BOT_TOKEN",
     "TELEGRAM_CHAT_ID": "YOUR_TELEGRAM_CHAT_ID",
-    "DROP_THRESHOLDS": [0.01, 0.02, 0.03],
-    "MARKETSTACK_API_KEY": "YOUR_MARKETSTACK_API_KEY",
-    "SP500_SYMBOL": "SPX", 
-    "SP500_CHECK_TIMES": ["12:00", "16:00", "20:00"]
+    "DROP_THRESHOLDS": [
+        0.01,
+        0.02,
+        0.03
+    ],
+    "MAX_ORDERS_PER_SYMBOL": 3,
+    "ALPHA_VANTAGE_API_KEY": "YOUR_ALPHA_VANTAGE_API_KEY",
+    "STOCK_SYMBOLS": [
+        "SPY",
+        "MSTR"
+    ],
+    "STOCK_CHECK_TIMES": [
+        "08:00",
+        "12:00",
+        "16:00",
+        "20:00"
+    ]
 }
