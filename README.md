@@ -1,24 +1,38 @@
 ## Binance Trading Bot
 
-A Python-based trading bot for Binance that implements a price drop strategy with multiple buy thresholds.
+A Python-based trading bot for Binance that implements both cryptocurrency and stock market tracking strategies.
 
 ### Features
 
-- Multiple price drop thresholds for buying
-- Support for both limit and market orders
-- Automatic order monitoring and balance tracking
-- Real-time balance reports with trade summaries
-- Trading fee calculations and tracking
-- Configurable USDT reserve amount
-- Support for both live and testnet trading
-- Optional Telegram notifications
-- Automatic cancellation of unfilled orders after 8 hours
+- Cryptocurrency Trading:
+  - Multiple price drop thresholds for buying
+  - Support for both limit and market orders
+  - Automatic order monitoring and balance tracking
+  - Real-time balance reports with trade summaries
+  - Trading fee calculations and tracking
+  - Configurable USDT reserve amount
+  - Support for both live and testnet trading
+  - Automatic cancellation of unfilled orders after 8 hours
+
+- Stock Market Integration:
+  - S&P 500 tracking via Alpha Vantage API
+  - Multiple daily price checks for stocks
+  - Configurable stock symbols tracking
+  - Real-time stock market notifications
+
+- Monitoring and Notifications:
+  - Optional Telegram notifications
+  - Health check monitoring
+  - Detailed logging system
+  - Balance and trade reporting
 
 ### Prerequisites
 
-- Python 3.7 or higher
+- Python 3.9 or higher
 - A Binance account (regular or testnet)
 - Telegram bot (optional)
+- Alpha Vantage API key (for stock tracking)
+- Polygon.io API key (for additional market data)
 
 ### Installation
 
@@ -52,7 +66,10 @@ A Python-based trading bot for Binance that implements a price drop strategy wit
         "TELEGRAM_TOKEN": "your_telegram_bot_token",
         "TELEGRAM_CHAT_ID": "your_telegram_chat_id",
         "DROP_THRESHOLDS": [0.01, 0.02, 0.03],
-        "USDT_RESERVE": 200
+        "USDT_RESERVE": 200,
+        "ALPHA_VANTAGE_API_KEY": "your_alpha_vantage_api_key",
+        "POLYGON_API_KEY": "your_polygon_api_key",
+        "STOCK_SYMBOLS": ["AAPL", "GOOGL", "AMZN"]
     }
     ```
 
@@ -71,6 +88,7 @@ A Python-based trading bot for Binance that implements a price drop strategy wit
     - Choose limit or market orders
     - Set fixed USDT amount or percentage per trade
     - Set USDT reserve amount (minimum 200)
+    - Configure stock symbols for tracking
 
 3. **Trading Process**
     - Bot monitors price drops from daily open
@@ -78,6 +96,7 @@ A Python-based trading bot for Binance that implements a price drop strategy wit
     - Automatically cancels unfilled limit orders after 8 hours
     - Maintains minimum USDT reserve
     - Shows detailed balance reports after trades
+    - Tracks stock prices and sends notifications
 
 4. **Balance Reports**
     After each trade, you'll see:
@@ -90,6 +109,7 @@ A Python-based trading bot for Binance that implements a price drop strategy wit
     - `/balance`: Current account balance
     - `/trades`: Total number of trades executed
     - `/profits`: Current profit/loss calculation
+    - `/stocks`: Current stock prices
 
 ### Docker Support
 
@@ -108,6 +128,9 @@ A Python-based trading bot for Binance that implements a price drop strategy wit
     USE_PERCENTAGE=no
     TRADE_AMOUNT=100
     USDT_RESERVE=200
+    ALPHA_VANTAGE_API_KEY=your_alpha_vantage_api_key
+    POLYGON_API_KEY=your_polygon_api_key
+    STOCK_SYMBOLS=AAPL,GOOGL,AMZN
     ```
 
 2. **Build and run**
