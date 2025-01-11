@@ -60,3 +60,33 @@ class Config:
     @property
     def usdt_reserve(self):
         return self.config.get('USDT_RESERVE', 200)  # Default 200 USDT if not specified
+
+    @property
+    def polygon_access_key(self):
+        """Get Polygon.io API key"""
+        return self.config['POLYGON_ACCESS_KEY']
+
+    @property
+    def polygon_secret_key(self):
+        """Get Polygon.io secret key"""
+        return self.config['POLYGON_SECRET_KEY']
+
+    @property
+    def alpha_vantage_api_key(self):
+        """Get Alpha Vantage API key"""
+        return self.config['ALPHA_VANTAGE_API_KEY']
+
+    @property
+    def stock_symbols(self):
+        """Get stock symbols to track"""
+        return self.config.get('STOCK_SYMBOLS', ['SPY', 'MSTR'])
+
+    @property
+    def stock_check_times(self):
+        """Get times to check stock prices"""
+        return self.config.get('STOCK_CHECK_TIMES', ['08:00', '12:00', '16:00', '20:00'])
+
+    @property
+    def max_orders_per_symbol(self):
+        """Get max orders per symbol"""
+        return self.config.get('MAX_ORDERS_PER_SYMBOL', 3)

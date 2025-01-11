@@ -6,7 +6,7 @@ from queue import Queue
 from datetime import datetime, timedelta  # Add this import
 
 class TradeExecutor:
-    def __init__(self, binance_wrapper, logger, telegram_handler=None, balance_manager=None):  # Add balance_manager
+    def __init__(self, binance_wrapper, logger, telegram_handler=None, balance_manager=None, max_orders=3):  # Add balance_manager
         self.client = binance_wrapper  # This is now the wrapper, not the raw client
         self.logger = logger
         self.telegram = telegram_handler
@@ -15,8 +15,9 @@ class TradeExecutor:
         self.order_type = None
         self.use_percentage = None
         self.trade_amount = None
-        self.order_times = {}  # Track order times
-        self.pending_orders = {}  # Track pending limit orders
+        self.order_times = {}  # Track order times keyed by orderId
+        self.pending_orders = {}  # Track pending orders keyed by orderId
+        self.cleanup_interval = 300  # Check every 5 minutes
         self.order_monitor_thread = None
         self.stop_monitoring = False
         self.start_order_monitor()
@@ -25,6 +26,8 @@ class TradeExecutor:
         self.daily_order_count = {}  # Track number of orders per symbol per threshold
         self.order_cleanup_thread = None
         self.start_order_cleanup()
+        self.max_orders_per_symbol = max_orders  # Add this line
+        self.daily_threshold_orders = {}  # Track orders by symbol and threshold
 
     def configure_trading_params(self, order_type, use_percentage, trade_amount):
         self.order_type = order_type
@@ -95,26 +98,54 @@ class TradeExecutor:
                 order_ids = list(self.pending_orders.keys())
                 
                 for order_id in order_ids:
+                    if order_id not in self.pending_orders:  # Skip if order was already processed
+                        continue
+                        
                     order_info = self.pending_orders[order_id]
                     symbol = order_info['symbol']
                     
-                    order_status = self.client.client.get_order(
-                        symbol=symbol,
-                        orderId=order_id
-                    )
+                    try:
+                        order_status = self.client.client.get_order(
+                            symbol=symbol,
+                            orderId=order_id
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Error getting order status: {e}")
+                        continue
                     
-                    if order_status['status'] == 'FILLED':
-                        print(Fore.GREEN + f"\nOrder filled: {symbol}")  # Add newline for better formatting
+                    if order_status['status'] == 'FILLED' and order_id in self.pending_orders:
+                        print(Fore.GREEN + f"\nOrder filled: {symbol}")
                         self.logger.info(f"BUY ORDER for {symbol}: {order_status}")
+                        
+                        # Send notifications only once
                         if self.telegram:
-                            self.telegram.send_trade_notification(symbol, order_status)
-                        if self.balance_manager:
-                            self.balance_manager.print_balance_report(order_status)
+                            message = (
+                                f"✅ Order Filled!\n"
+                                f"Symbol: {symbol}\n"
+                                f"Price: ${float(order_status['price']):,.2f}\n"
+                                f"Quantity: {order_status['executedQty']}\n"
+                                f"Total: ${float(order_status['cummulativeQuoteQty']):,.2f}"
+                            )
+                            self.telegram.send_message_sync(message)
+                            
+                        # Remove from pending orders before balance update
                         del self.pending_orders[order_id]
                         self.orders_in_progress -= 1
-                    elif order_status['status'] == 'REJECTED' or order_status['status'] == 'CANCELED':
+                        
+                        # Update balance only after order is removed
+                        if self.balance_manager:
+                            self.balance_manager.update_trade_totals(
+                                symbol,
+                                float(order_status['executedQty']),
+                                float(order_status['price'])
+                            )
+                            
+                        break  # Process one order at a time
+                        
+                    elif order_status['status'] in ['REJECTED', 'CANCELED', 'EXPIRED']:
                         print(Fore.RED + f"Order {order_status['status'].lower()}: {symbol}")
                         del self.pending_orders[order_id]
+                        self.orders_in_progress -= 1
                         
             except Exception as e:
                 self.logger.error(f"Error monitoring orders: {str(e)}")
@@ -133,6 +164,7 @@ class TradeExecutor:
     def reset_daily_order_count(self):
         """Reset daily order count while preserving open orders"""
         self.daily_order_count = {}
+        self.daily_threshold_orders = {}  # Reset threshold tracking
         # Check all open orders and add them to daily count
         for symbol in self.client.trading_symbols:
             open_count = self.check_open_orders(symbol)
@@ -140,16 +172,24 @@ class TradeExecutor:
                 self.daily_order_count[symbol] = open_count
                 self.logger.info(f"Found {open_count} open orders for {symbol} during reset")
 
-    def can_place_order(self, symbol, max_orders=3):
-        """Check if we can place more orders for this symbol"""
-        current_orders = self.daily_order_count.get(symbol, 0)
-        return current_orders < max_orders
+    def can_place_order(self, symbol, threshold=None):
+        """Check if we can place more orders for this symbol and threshold"""
+        # If no threshold provided, use basic symbol check
+        if threshold is None:
+            return True
 
-    def execute_trade(self, symbol, quantity, price, order_type="limit"):
+        # Initialize tracking structures if needed
+        if symbol not in self.daily_threshold_orders:
+            self.daily_threshold_orders[symbol] = set()
+
+        # Check if this threshold has been used for this symbol today
+        return threshold not in self.daily_threshold_orders[symbol]
+
+    def execute_trade(self, symbol, quantity, price, order_type="limit", threshold=None):
         try:
-            # Check if we can place more orders for this symbol
-            if not self.can_place_order(symbol):
-                self.logger.info(f"Maximum orders reached for {symbol}, skipping new order")
+            # Check if we can place order for this threshold
+            if not self.can_place_order(symbol, threshold):
+                self.logger.info(f"Order already placed for {symbol} at threshold {threshold}, skipping")
                 return None
 
             # Take balance snapshot if this is the first order in a batch
@@ -172,7 +212,7 @@ class TradeExecutor:
             print(Fore.YELLOW + f"Price: {rounded_price}")
             
             if order_type == "limit":
-                order = self.client.client.create_order(  # Access the underlying client through wrapper
+                order = self.client.client.create_order(
                     symbol=symbol,
                     side=SIDE_BUY,
                     type=ORDER_TYPE_LIMIT,
@@ -182,20 +222,32 @@ class TradeExecutor:
                     recvWindow=5000
                 )
                 
-                # Add to pending orders and track time
+                # Store order time immediately after creation
                 current_time = time.time()
                 self.order_times[order['orderId']] = current_time
                 self.pending_orders[order['orderId']] = {
                     'symbol': symbol,
-                    'order': order
+                    'order': order,
+                    'created_at': current_time,
+                    'expires_at': current_time + (8 * 3600)  # 8 hours in seconds
                 }
                 
-                # Log order placement time and expiration
                 placement_time = datetime.fromtimestamp(current_time)
                 expiration_time = placement_time + timedelta(hours=8)
                 print(Fore.YELLOW + f"Order placed at: {placement_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 print(Fore.YELLOW + f"Will be cancelled if not filled by: {expiration_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 
+                # Send initial notification
+                if self.telegram:
+                    msg = (
+                        f"✅ Limit Order Placed\n"
+                        f"Symbol: {symbol}\n"
+                        f"Price: ${float(price):,.2f}\n"
+                        f"Quantity: {quantity}\n"
+                        f"Expires: {expiration_time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                    self.telegram.send_message_sync(msg)
+
             else:
                 order = self.client.client.create_order(
                     symbol=symbol,
@@ -205,15 +257,30 @@ class TradeExecutor:
                     recvWindow=5000
                 )
                 print(Fore.GREEN + f"BUY ORDER for {symbol}: {order}")
+                
+                # Market orders are filled immediately, send notification
+                message = (
+                    f"✅ Market Order Executed!\n"
+                    f"Symbol: {symbol}\n"
+                    f"Quantity: {quantity}\n"
+                    f"Total: ${float(order['cummulativeQuoteQty']):,.2f}"
+                )
                 if self.telegram:
-                    self.telegram.send_trade_notification(symbol, order)
+                    self.telegram.send_message_sync(message)
                 if self.balance_manager:
                     self.balance_manager.print_balance_report(order)
+                
                 self.orders_in_progress -= 1
+
+            # If order placed successfully, mark this threshold as used
+            if threshold is not None:
+                if symbol not in self.daily_threshold_orders:
+                    self.daily_threshold_orders[symbol] = set()
+                self.daily_threshold_orders[symbol].add(threshold)
+                self.logger.info(f"Marked threshold {threshold} as used for {symbol}")
 
             # Update daily order count after successful order placement
             self.daily_order_count[symbol] = self.daily_order_count.get(symbol, 0) + 1
-            
             return order
             
         except Exception as e:
@@ -232,32 +299,42 @@ class TradeExecutor:
         while not self.stop_monitoring:
             try:
                 current_time = time.time()
-                open_orders = self.client.get_open_orders()
-                
-                for order in open_orders:
-                    order_id = order['orderId']
-                    order_time = self.order_times.get(order_id)
-                    
-                    if order_time and (current_time - order_time) > 8 * 3600:  # 8 hours in seconds
-                        try:
-                            self.client.cancel_order(symbol=order['symbol'], orderId=order_id)
-                            print(Fore.YELLOW + f"\nCancelled old order: {order['symbol']} (Order ID: {order_id})")
-                            print(Fore.YELLOW + f"Order age: {(current_time - order_time) / 3600:.2f} hours")
-                            self.logger.info(f"Cancelled old order: {order['symbol']} (Order ID: {order_id})")
+                canceled_orders = []
+
+                # Check all pending orders
+                for order_id, order_info in list(self.pending_orders.items()):
+                    try:
+                        if current_time >= order_info['expires_at']:
+                            symbol = order_info['symbol']
+                            self.client.cancel_order(symbol=symbol, orderId=order_id)
                             
-                            # Remove from tracking
-                            if order_id in self.pending_orders:
-                                del self.pending_orders[order_id]
-                            if order_id in self.order_times:
-                                del self.order_times[order_id]
-                                
-                        except Exception as e:
-                            self.logger.error(f"Error cancelling order {order_id}: {str(e)}")
+                            # Log cancellation
+                            age_hours = (current_time - order_info['created_at']) / 3600
+                            msg = (
+                                f"🕒 Order Expired and Cancelled\n"
+                                f"Symbol: {symbol}\n"
+                                f"Order Age: {age_hours:.2f} hours\n"
+                                f"Order ID: {order_id}"
+                            )
+                            
+                            print(Fore.YELLOW + f"\n{msg}")
+                            self.logger.info(msg)
+                            
+                            if self.telegram:
+                                self.telegram.send_message_sync(msg)
+                            
+                            # Clean up tracking
+                            del self.pending_orders[order_id]
+                            del self.order_times[order_id]
+                            canceled_orders.append(order_id)
+                            
+                    except Exception as e:
+                        self.logger.error(f"Error cancelling order {order_id}: {str(e)}")
                 
             except Exception as e:
                 self.logger.error(f"Error in cleanup thread: {str(e)}")
             
-            time.sleep(300)  # Check every 5 minutes
+            time.sleep(self.cleanup_interval)  # Check every 5 minutes
 
     def cancel_old_orders(self):
         """Cancel limit orders that are older than 8 hours"""

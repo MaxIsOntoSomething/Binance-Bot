@@ -37,67 +37,43 @@ class BalanceManager:
         self.snapshot_balance = self.get_balance()
         self.pending_updates = []
 
-    def print_balance_report(self, new_order=None):
-        """Print balance report with changes from the last trade and fees"""
+    def print_balance_report(self, order=None):
+        """Print current balance and changes if order provided"""
         try:
             current_balance = self.get_balance()
-            if not current_balance:
-                return
-
-            if not self.snapshot_balance:
-                self.snapshot_balance = current_balance.copy()
-                return
-
-            # Store order details for aggregation
-            if new_order and new_order.get('status') == 'FILLED':
-                self.pending_updates.append(new_order)
-
-            print(Fore.BLUE + "\nBalance Report:")
-            
-            # Calculate cumulative changes from snapshot
-            for asset, total in current_balance.items():
-                previous = self.snapshot_balance.get(asset, 0)
-                change = total - previous
+            if current_balance:
+                print("\nBalance Report:")
+                for asset, amount in current_balance.items():
+                    print(f"{asset}: {amount}")
+                    self.logger.info(f"Balance: {asset}: {amount}")
                 
-                if total > 0 or change != 0:
-                    change_str = f" ({'+' if change > 0 else ''}{change:.8f})" if change != 0 else ""
-                    print(Fore.BLUE + f"{asset}: {total:.8f}{change_str}")
-
-            # Show trade details
-            if self.pending_updates:
-                print(Fore.GREEN + f"\nTrade Summary:")
-                total_cost = 0
-                total_qty = 0
-                symbol = self.pending_updates[0]['symbol']  # Get symbol from first order
-                
-                for order in self.pending_updates:
-                    fills = order.get('fills', [])
-                    for fill in fills:
-                        qty = float(fill['qty'])
-                        price = float(fill['price'])
-                        cost = qty * price
-                        total_qty += qty
-                        total_cost += cost
-
-                if total_qty > 0:
-                    avg_price = total_cost / total_qty
-                    trading_fee = total_cost * 0.001  # 0.1% trading fee
-                    base_asset = symbol.replace('USDT', '')
+                # Only update trade totals and send notification if it's a new order
+                if order and order.get('side') == 'BUY':
+                    symbol = order.get('symbol', '')
+                    price = float(order.get('price', 0))
+                    qty = float(order.get('executedQty', 0))
                     
-                    print(Fore.GREEN + f"Added: {total_qty:.8f} {base_asset}")
-                    print(Fore.GREEN + f"Average Price: {avg_price:.8f} USDT")
-                    print(Fore.GREEN + f"Total Cost: {total_cost:.8f} USDT")
-                    print(Fore.YELLOW + f"Trading Fee: {trading_fee:.8f} USDT")
-                    print(Fore.GREEN + f"Total Amount Spent: {(total_cost + trading_fee):.8f} USDT")
-
-            # Reset after printing report
-            self.snapshot_balance = current_balance.copy()
-            self.pending_updates = []
-
+                    # Update trade totals
+                    self.update_trade_totals(symbol, qty, price)
+                    
+                    self.total_trades += 1
+                    
+                    if hasattr(self, 'telegram') and self.telegram:
+                        message = (
+                            f"💰 Trade Executed: BUY {symbol}\n"
+                            f"Price: ${price:,.8f}\n"
+                            f"Quantity: {qty:,.8f}\n"
+                            f"Total: ${price * qty:,.2f}\n\n"
+                            f"Updated Balance:\n"
+                        )
+                        
+                        for asset, amount in current_balance.items():
+                            message += f"{asset}: {amount}\n"
+                        
+                        self.telegram.send_message_sync(message)
+                    
         except Exception as e:
-            self.logger.error(f"Error in balance report: {str(e)}")
-            print(Fore.RED + f"Error in balance report: {str(e)}")
-            print(Fore.RED + f"Order data: {new_order}")
+            self.logger.error(f"Error fetching balance: {str(e)}")
 
     def update_trade_totals(self, symbol, quantity, price):
         self.total_bought[symbol] += quantity

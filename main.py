@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import time
 from colorama import init, Fore
 import os
+import requests  # Add this import at the top with other imports
 
 from src.utils.config import Config
 from src.bot.binance_client import BinanceClientWrapper
@@ -11,6 +12,7 @@ from src.bot.balance_manager import BalanceManager
 from src.bot.telegram_handler import TelegramHandler
 from strategies.price_drop import PriceDropStrategy
 from src.utils.logger import setup_logger
+from src.bot.sp500_tracker import SP500Tracker
 
 # Initialize colorama
 init(autoreset=True)
@@ -42,12 +44,19 @@ class TradingBot:
         )
         
         if use_telegram:
-            self.telegram = TelegramHandler(
-                self.config.telegram_token,
-                self.config.telegram_chat_id,
-                self.balance_manager,
-                self.market_data  # Add market_data instance
-            )
+            try:
+                self.telegram = TelegramHandler(
+                    self.config.telegram_token,
+                    self.config.telegram_chat_id,
+                    self.balance_manager,
+                    self.market_data  # Add market_data instance
+                )
+                self.telegram.set_logger(self.logger)  # Set logger after initialization
+                self.logger.info("Telegram handler initialized")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Telegram handler: {e}")
+                self.telegram = None
+                print(Fore.YELLOW + "Warning: Telegram notifications disabled due to initialization error")
         else:
             self.telegram = None
             
@@ -55,9 +64,17 @@ class TradingBot:
             self.client,  # Pass the wrapper instead of self.client.client
             self.logger, 
             self.telegram,
-            self.balance_manager  # Add balance_manager to TradeExecutor
+            self.balance_manager,  # Add balance_manager to TradeExecutor
+            max_orders=self.config.max_orders_per_symbol  # Use property instead of get method
         )
         self.strategy = PriceDropStrategy(drop_thresholds=drop_thresholds or self.config.drop_thresholds)
+        
+        # Initialize SP500 tracker with Alpha Vantage API
+        self.sp500_tracker = SP500Tracker(
+            self.config.alpha_vantage_api_key,
+            self.telegram if use_telegram else None,
+            self.logger
+        )
         
         # Initialize trading state
         self.initialize_trading_state()
@@ -84,6 +101,42 @@ class TradingBot:
         if invalid_symbols:
             self._write_invalid_symbols(invalid_symbols)
             print(Fore.YELLOW + f"\nRemoved {len(invalid_symbols)} invalid symbols. Trading will continue with {len(valid_symbols)} valid symbols.")
+        print(Fore.CYAN + "\nTesting Stock Market Connections:")
+        try:
+            params = {
+                'function': 'GLOBAL_QUOTE',
+                'symbol': 'SPY',
+                'apikey': self.config.alpha_vantage_api_key
+            }
+            try:
+                response = requests.get("https://www.alphavantage.co/query", params=params, timeout=10)
+                if response.status_code != 200:
+                    print(Fore.RED + f"Alpha Vantage API returned status code {response.status_code}")
+                    return len(valid_symbols) > 0
+                    
+                data = response.json()
+                
+                if 'Error Message' in data:
+                    print(Fore.RED + f"Alpha Vantage API error: {data['Error Message']}")
+                    return len(valid_symbols) > 0
+                    
+                if 'Global Quote' in data:
+                    quote = data['Global Quote']
+                    price = float(quote['05. price'])
+                    print(Fore.GREEN + f"Connection successful. Alpha Vantage API working. SPY price: ${price:,.2f}")
+                else:
+                    print(Fore.RED + "Could not fetch stock data from Alpha Vantage")
+            except requests.Timeout:
+                print(Fore.RED + "Alpha Vantage API request timed out")
+            except requests.RequestException as e:
+                print(Fore.RED + f"Error connecting to Alpha Vantage: {str(e)}")
+        except Exception as e:
+            print(Fore.RED + f"Error testing Alpha Vantage connection: {str(e)}")
+            self.logger.error(f"Error testing Alpha Vantage connection: {str(e)}")
+                
+        if invalid_symbols:
+            self._write_invalid_symbols(invalid_symbols)
+            print(Fore.YELLOW + f"\nRemoved {len(invalid_symbols)} invalid crypto symbols. Trading will continue with {len(valid_symbols)} valid symbols.")
             self.logger.warning(f"Removed invalid symbols: {', '.join(invalid_symbols)}")
             
         # Update trading symbols to only include valid ones
@@ -122,10 +175,24 @@ class TradingBot:
         last_price_fetch_time = time.time() - fetch_price_interval
         next_daily_open_check = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
-        # Initial setup
+        # Initial setup - Only send to Telegram if explicitly enabled
+        print("\nInitial Balance Report:")
         self.market_data.print_daily_open_prices()
-        self.balance_manager.print_balance_report()
+        balance = self.balance_manager.get_balance()
+        if balance:
+            balance_msg = []
+            for asset, amount in balance.items():
+                print(f"{asset}: {amount}")
+                self.logger.info(f"Balance: {asset}: {amount}")
+                balance_msg.append(f"{asset}: {amount}")
+            
+            if self.telegram:
+                try:
+                    self.telegram.send_message_sync("📊 Initial Balance:\n" + "\n".join(balance_msg))
+                except Exception as e:
+                    self.logger.error(f"Error sending initial balance to Telegram: {e}")
 
+        # Rest of run method
         while True:
             try:
                 self.process_trading_loop(
@@ -141,6 +208,12 @@ class TradingBot:
                 time.sleep(60)
 
     def process_trading_loop(self, fetch_price_interval, last_price_fetch_time, next_daily_open_check):
+        current_time = datetime.now(timezone.utc)
+        
+        # Check SP500 price at specified times
+        if self.sp500_tracker.should_check_price(current_time):
+            self.sp500_tracker.get_sp500_price()
+        
         current_time = time.time()
         
         # Update prices if needed
@@ -163,9 +236,15 @@ class TradingBot:
 
     def handle_daily_reset(self, next_daily_open_check):
         """Handle daily reset while preserving open orders"""
-        self.market_data.print_daily_open_prices()
+        # Get daily prices before reset
+        daily_prices = {}
+        for symbol in self.config.trading_symbols:
+            price = self.market_data.get_daily_open_price(symbol)
+            if price:
+                daily_prices[symbol] = price
         
-        # Reset trade executor's daily order count while preserving open orders
+        # Perform reset operations
+        self.market_data.print_daily_open_prices()
         self.trade_executor.reset_daily_order_count()
         
         # Reset order tracking but exclude open orders
@@ -183,6 +262,10 @@ class TradingBot:
             }
             for symbol in self.config.trading_symbols
         }
+        
+        # Send notification if telegram is enabled
+        if self.telegram:
+            self.telegram.send_daily_reset_notification(daily_prices)
         
         self.max_trades_executed = False
         self.logger.info("Daily reset completed while preserving open orders")
@@ -216,14 +299,13 @@ class TradingBot:
                 )
                 
                 for threshold, price in signals:
-                    if not self.orders_placed_today[symbol][threshold]:
-                        if self.trade_executor.can_place_order(symbol):
-                            print(Fore.MAGENTA + f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
-                            self.execute_trade(symbol, price)
-                            self.orders_placed_today[symbol][threshold] = True
-                            self.logger.info(f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
-                        else:
-                            print(Fore.YELLOW + f"Maximum orders reached for {symbol}, skipping signal")
+                    # Check if this threshold can still be used for this symbol
+                    if self.trade_executor.can_place_order(symbol, threshold):
+                        print(Fore.MAGENTA + f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
+                        self.execute_trade(symbol, price, threshold)  # Pass threshold to execute_trade
+                        self.logger.info(f"Signal generated for {symbol} at threshold {threshold}: BUY at price {price}")
+                    else:
+                        print(Fore.YELLOW + f"Already executed order for {symbol} at threshold {threshold}, skipping")
 
         # Update max_trades_executed status
         self.max_trades_executed = all(
@@ -242,7 +324,7 @@ class TradingBot:
             trade_amount=trade_amount
         )
 
-    def execute_trade(self, symbol, price):
+    def execute_trade(self, symbol, price, threshold):
         """Execute trade with configured parameters"""
         try:
             if self.use_percentage:
@@ -258,7 +340,8 @@ class TradingBot:
                 symbol=symbol,
                 quantity=quantity,  # Pass the formatted string quantity
                 price=price,
-                order_type=self.order_type
+                order_type=self.order_type,
+                threshold=threshold  # Add threshold parameter
             )
         except Exception as e:
             self.logger.error(f"Error calculating trade quantity for {symbol}: {str(e)}")
@@ -273,30 +356,74 @@ if __name__ == "__main__":
         order_type = os.getenv('ORDER_TYPE').strip().lower()
         use_percentage = os.getenv('USE_PERCENTAGE').strip().lower() == 'yes'
         trade_amount = float(os.getenv('TRADE_AMOUNT'))
-        usdt_reserve = float(os.getenv('USDT_RESERVE', 200))  # Default reserve amount
+        usdt_reserve = float(os.getenv('USDT_RESERVE', 0))  # Default reserve amount is 0
     else:
         # Running normally, prompt for input
         use_testnet = input("Do you want to use the testnet? (yes/no): ").strip().lower() == 'yes'
         use_telegram = input("Do you want to use Telegram notifications? (yes/no): ").strip().lower() == 'yes'
-        num_thresholds = int(input("Enter the number of drop thresholds: ").strip())
+        
+        # Get drop thresholds
+        while True:
+            try:
+                num_thresholds = int(input("Enter the number of drop thresholds: ").strip())
+                break
+            except ValueError:
+                print("Please enter a valid number.")
+                
         drop_thresholds = []
         for i in range(num_thresholds):
             while True:
-                threshold = float(input(f"Enter drop threshold {i+1} percentage (e.g., 1 for 1%): ").strip()) / 100
-                if i == 0 or threshold > drop_thresholds[-1]:  # Changed from < to > for ascending order
-                    drop_thresholds.append(threshold)
-                    break
-                print(f"Threshold {i+1} must be higher than threshold {i}. Please enter a valid value.")
-        order_type = input("Do you want to use limit orders or market orders? (limit/market): ").strip().lower()
+                try:
+                    threshold = float(input(f"Enter drop threshold {i+1} percentage (e.g., 1 for 1%): ").strip()) / 100
+                    if i == 0 or threshold > drop_thresholds[-1]:
+                        drop_thresholds.append(threshold)
+                        break
+                    print(f"Threshold {i+1} must be higher than threshold {i}. Please enter a valid value.")
+                except ValueError:
+                    print("Please enter a valid number.")
+        
+        # Get order type
+        while True:
+            order_type = input("Do you want to use limit orders or market orders? (limit/market): ").strip().lower()
+            if order_type in ['limit', 'market']:
+                break
+            print("Please enter either 'limit' or 'market'.")
+        
+        # Get percentage usage
         use_percentage = input("Do you want to use a percentage of USDT per trade? (yes/no): ").strip().lower() == 'yes'
-        if use_percentage:
-            trade_amount = float(input("Enter the percentage of USDT to use per trade (e.g., 10 for 10%): ").strip()) / 100
-        else:
-            trade_amount = float(input("Enter the amount of USDT to use per trade: ").strip())
-        usdt_reserve = float(input("Enter the USDT reserve amount (minimum 200): ").strip())
-        if usdt_reserve < 200:
-            usdt_reserve = 200
-            print("USDT reserve set to minimum value of 200")
+        
+        # Get trade amount with validation
+        while True:
+            try:
+                if use_percentage:
+                    amount_input = input("Enter the percentage of USDT to use per trade (e.g., 10 for 10%): ").strip()
+                    trade_amount = float(amount_input) / 100
+                    if 0 < trade_amount <= 1:
+                        break
+                    print("Please enter a percentage between 0 and 100.")
+                else:
+                    trade_amount = float(input("Enter the amount of USDT to use per trade: ").strip())
+                    if trade_amount > 0:
+                        break
+                    print("Please enter an amount greater than 0.")
+            except ValueError:
+                print("Please enter a valid number.")
+        
+        # Get USDT reserve amount with validation
+        while True:
+            try:
+                usdt_input = input("Enter the USDT reserve amount (0 or higher): ").strip()
+                if not usdt_input:
+                    usdt_reserve = 0
+                    break
+                usdt_reserve = float(usdt_input)
+                if usdt_reserve >= 0:
+                    break
+                print("Please enter a non-negative number.")
+            except ValueError:
+                print("Please enter a valid number.")
+        
+        print(f"USDT reserve set to: {usdt_reserve}")
 
     # Initialize bot
     bot = TradingBot(
