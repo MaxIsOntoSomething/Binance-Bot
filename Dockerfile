@@ -26,6 +26,9 @@ COPY . .
 # Set ownership to non-root user
 RUN chown -R botuser:botuser /app
 
+# Ensure logs directory exists and set permissions
+RUN mkdir -p /app/logs && chown -R botuser:botuser /app/logs
+
 # Switch to non-root user
 USER botuser
 
